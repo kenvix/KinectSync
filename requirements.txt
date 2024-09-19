@@ -1,3 +1,5 @@
 FreeSimpleGUI 
 loguru
 pySerial
+# pywin32
+# psutil

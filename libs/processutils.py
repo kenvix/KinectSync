@@ -33,6 +33,7 @@ def set_high_priority(target_pid=None):
             logger.info(
                 f"Windows: Process {pid} priority has been set to the highest ({error})."
             )
+            win32api.CloseHandle(handle)
 
         except Exception as e:
             logger.error(f"Error occurred while setting priority: {e}")

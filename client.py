@@ -16,6 +16,8 @@ def setup_arguments() -> argparse.Namespace:
         "--port", type=int, default=8890, help="port number", required=False
     )
     parser.add_argument("-t", "--record_time", type=int, default=20, help="record time")
+    parser.add_argument("-d", "--device_num", type=int, default=2, help="device num")
+    parser.add_argument("-o", "--device_offset", type=int, default=2, help="device offset")
     parser.add_argument(
         "--recorder_path",
         type=str,
@@ -75,24 +77,24 @@ def record_video(
     record_time: int,
     recorder_path: str,
     process_list: List[subprocess.Popen],
+    device_offset,
+    device_num
 ) -> str:
     """Handles video recording setup for multiple devices."""
     current_round: int = len(os.listdir(save_path)) // 2 + 1
-    save_file_name0: str = os.path.join(save_path, f"sheep_{current_round}_{id}_2.mkv")
-    save_file_name1: str = os.path.join(save_path, f"sheep_{current_round}_{id}_3.mkv")
 
-    # Call the helper function for both devices and track the processes
-    run_recorder(
-        1, "Subordinate", 320, record_time, save_file_name1, recorder_path, process_list
-    )
-    run_recorder(
-        0, "Subordinate", 320, record_time, save_file_name0, recorder_path, process_list
-    )
+    for i in range(device_num):
+        save_file_name: str = os.path.join(save_path, f"sheep_{current_round}_{id}_{device_offset + i}.mkv")
+        run_recorder(
+            i, "Subordinate", 320, record_time, save_file_name, recorder_path, process_list
+        )
 
     for p in process_list:
         processutils.read_until_signal(p)
 
-    logger.info(f"Started recording for sheep ID {id} - round {current_round}")
+    logger.info(
+        f"Started #{device_offset + i} recording for sheep ID {id} - round {current_round}"
+    )
     return "ready"
 
 
@@ -106,8 +108,10 @@ def terminate_processes(process_list: List[subprocess.Popen]) -> None:
 
 def main() -> None:
     args: argparse.Namespace = setup_arguments()
-    
+
     processutils.check_system_and_set_priority()
+    
+    logger.debug(args)
 
     # Create the save folder
     save_path: str = create_save_folder(args.save_path)
@@ -129,7 +133,13 @@ def main() -> None:
                 logger.info(f"Preparing to record video for sheep ID: {id}")
 
                 ret_message: str = record_video(
-                    id, save_path, args.record_time, args.recorder_path, process_list
+                    id,
+                    save_path,
+                    args.record_time,
+                    args.recorder_path,
+                    process_list,
+                    args.device_offset,
+                    args.device_num,
                 )
                 sk.send(ret_message.encode("utf-8"))
 

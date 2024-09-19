@@ -78,6 +78,7 @@ def main() -> None:
     parser.add_argument("--port", type=int, default=8890, help="Port number")
     parser.add_argument("--client_num", type=int, default=1, help="Client number")
     parser.add_argument("--record_time", type=int, default=20, help="Record time")
+    parser.add_argument("-d", "--device_num", type=int, default=2, help="device num")
     parser.add_argument(
         "--recorder_path",
         type=str,
@@ -88,6 +89,7 @@ def main() -> None:
         "--save_path", type=str, default="./Goatdata", help="Save root path"
     )
     args: argparse.Namespace = parser.parse_args()
+    logger.debug(args)
 
     # Directory setup
     create_directory(args.save_path)
@@ -118,19 +120,15 @@ def main() -> None:
                     f"All devices are ready. Currently recording round {len(os.listdir(save_path)) // 2 + 1}, Goat ID: {id[0]}"
                 )
 
-                sub_record_command: str = (
-                    f'k4arecorder.exe --device 0 --external-sync Subordinate --sync-delay 320 -d WFOV_2X2BINNED -c 1080p -r 30 -l {args.record_time} "{save_path}\\Goat_{len(os.listdir(save_path)) // 2 + 1}_{id[0]}_1.mkv"'
-                )
-                master_record_command: str = (
-                    f'k4arecorder.exe --device 1 --external-sync Subordinate --sync-delay 320 -d WFOV_2X2BINNED -c 1080p -r 30 -l {args.record_time} "{save_path}\\Goat_{len(os.listdir(save_path)) // 2 + 1}_{id[0]}_0.mkv"'
-                )
+                for i in range(args.device_num):
+                    record_command: str = (
+                        f'k4arecorder.exe --device {i} --external-sync Subordinate --sync-delay 320 -d WFOV_2X2BINNED -c 1080p -r 30 -l {args.record_time} "{save_path}\\Goat_{len(os.listdir(save_path)) // 2 + 1}_{id[0]}_{i}.mkv"'
+                    )
 
-                p1 = execute_recording(sub_record_command, args.recorder_path)
-                p2 = execute_recording(master_record_command, args.recorder_path)
+                    p = execute_recording(record_command, args.recorder_path)
 
-                # Append the processes to the list
-                recording_processes.append(p1)
-                recording_processes.append(p2)
+                    # Append the processes to the list
+                    recording_processes.append(p)
 
                 for p in recording_processes:
                     processutils.read_until_signal(p)
