@@ -1,5 +1,6 @@
 import os
 import platform
+import subprocess
 import psutil
 import ctypes
 from loguru import logger
@@ -18,31 +19,33 @@ def check_admin():
     else:
         return False
 
-def set_high_priority():
+def set_high_priority(target_pid=None):
     """Set the process priority to the highest level based on the operating system."""
     if platform.system().lower() == 'windows':
         import win32api, win32process, win32con
         # Set REALTIME_PRIORITY_CLASS for Windows
         REALTIME_PRIORITY_CLASS = 0x00000100
         try:
-            pid = win32api.GetCurrentProcessId()
+            pid = win32api.GetCurrentProcessId() if target_pid is None else target_pid
             handle = win32api.OpenProcess(win32con.PROCESS_ALL_ACCESS, True, pid)
             win32process.SetPriorityClass(handle, win32process.REALTIME_PRIORITY_CLASS)
-            logger.info("Windows: Process priority has been set to the highest (REALTIME_PRIORITY_CLASS).")
+            error = win32api.GetLastError()
+            logger.info(
+                f"Windows: Process {pid} priority has been set to the highest ({error})."
+            )
+
         except Exception as e:
             logger.error(f"Error occurred while setting priority: {e}")
-    elif platform.system().lower() == 'linux':
+    else:
         # Set the highest priority (-20) for Linux
         try:
-            import os
-            os.nice(-20)
+            import psutil
+            psutil.Process(target_pid).nice(-20)
             logger.info("Linux: Process priority has been set to the highest (-20).")
         except psutil.AccessDenied:
             logger.error("Failed to set priority: No root privileges.")
         except Exception as e:
             logger.error(f"Error occurred while setting priority: {e}")
-    else:
-        logger.warning("Unsupported operating system.")
 
 def check_system_and_set_priority():
     """Check the operating system and set the process priority to the highest level if admin/root."""
@@ -54,3 +57,23 @@ def check_system_and_set_priority():
         logger.warning("Not running with admin/root privileges. Cannot set process priority.")
         logger.warning("Please, run this program with admin/root.")
         return False
+
+
+def read_until_signal(process: subprocess.Popen):
+    # 持续读取输出，直到检测到目标字符串
+    try:
+        while True:
+            if process.poll() is None:
+                output = process.stdout.read()
+                logger.debug(f"Pid {process.pid}: {output.strip()}")
+                logger.error(f"Pid {process.pid} is dead with code {process.wait()}")
+                return False
+            output = process.stdout.readline()
+            logger.debug(f"Pid {process.pid}: {output.strip()}")
+            if output == "" and process.poll() is not None:
+                break
+            if "Waiting for signal from master" in output:
+                logger.info(f"Pid {process.pid} - Signal detected!")
+                break
+    except Exception as e:
+        ...
