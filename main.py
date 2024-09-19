@@ -7,6 +7,7 @@ import serial
 import traceback
 import threading
 import time
+from libs import processutils
 
 sg.theme("DarkAmber")
 
@@ -29,6 +30,10 @@ def com_reader():
 
 # 创造窗口
 window = sg.Window("PWM Controller ver.1.0 by Kenvix <i@kenvix.com>", layout)
+
+if not processutils.check_system_and_set_priority():
+    sg.popup_error("Not running with admin/root privileges. Cannot set process priority. Please, run this program with admin/root.")
+
 # 事件循环并获取输入值
 while True:
     try:
@@ -43,9 +48,9 @@ while True:
             pwmDuty = values[1]
             pwmSlot = values[2]
             com.write(f"dU{pwmSlot}:{pwmDuty}".encode("ascii"))
-            status_duty = com.read_until("\n")
+            status_duty = com.read_until(b"\n")
             com.write(f"FR{pwmSlot}:{pwmFreq}".encode("ascii"))
-            status_freq = com.read_until("\n")
+            status_freq = com.read_until(b"\n")
             logger.info(
                 f"Started PWM in {pwmFreq}Hz {pwmDuty}% [Duty {status_duty} Freq {status_freq}]"
             )
@@ -55,7 +60,7 @@ while True:
                 continue
             pwmSlot = values[2]
             com.write(f"FR{pwmSlot}:000".encode("ascii"))
-            status_freq = com.read_until("\n")
+            status_freq = com.read_until(b"\n")
             logger.info(f"Stopped PWM {status_freq}")
             continue
         elif "Connect Serial" in event:
@@ -79,6 +84,6 @@ while True:
     except Exception as e:
         logger.error(e)
         traceback.print_exc()
-        sg.popup_cancel(e)
+        sg.popup_error(e)
 
 window.close()
