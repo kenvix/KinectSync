@@ -19,6 +19,9 @@ def setup_arguments() -> argparse.Namespace:
     parser.add_argument("-d", "--device_num", type=int, default=2, help="device num")
     parser.add_argument("-o", "--device_offset", type=int, default=2, help="device offset")
     parser.add_argument(
+        "-u", "--sync_delay", type=int, default=160, help="Record sync-delay in us"
+    )
+    parser.add_argument(
         "--recorder_path",
         type=str,
         default="C:\\Program Files\\Azure Kinect SDK v1.4.2\\tools",
@@ -78,7 +81,8 @@ def record_video(
     recorder_path: str,
     process_list: List[subprocess.Popen],
     device_offset,
-    device_num
+    device_num,
+    sync_delay,
 ) -> str:
     """Handles video recording setup for multiple devices."""
     current_round: int = len(os.listdir(save_path)) // 2 + 1
@@ -86,7 +90,13 @@ def record_video(
     for i in range(device_num):
         save_file_name: str = os.path.join(save_path, f"sheep_{current_round}_{id}_{device_offset + i}.mkv")
         run_recorder(
-            i, "Subordinate", 320, record_time, save_file_name, recorder_path, process_list
+            i,
+            "Subordinate",
+            (device_offset + i) * sync_delay,
+            record_time,
+            save_file_name,
+            recorder_path,
+            process_list,
         )
 
     for p in process_list:
@@ -110,7 +120,7 @@ def main() -> None:
     args: argparse.Namespace = setup_arguments()
 
     processutils.check_system_and_set_priority()
-    
+
     logger.debug(args)
 
     # Create the save folder
@@ -140,6 +150,7 @@ def main() -> None:
                     process_list,
                     args.device_offset,
                     args.device_num,
+                    args.sync_delay,
                 )
                 sk.send(ret_message.encode("utf-8"))
 

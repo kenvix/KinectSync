@@ -78,6 +78,9 @@ def main() -> None:
     parser.add_argument("--port", type=int, default=8890, help="Port number")
     parser.add_argument("--client_num", type=int, default=1, help="Client number")
     parser.add_argument("--record_time", type=int, default=20, help="Record time")
+    parser.add_argument(
+        "-u", "--sync_delay", type=int, default=160, help="Record sync-delay in us"
+    )
     parser.add_argument("-d", "--device_num", type=int, default=2, help="device num")
     parser.add_argument(
         "--recorder_path",
@@ -121,8 +124,9 @@ def main() -> None:
                 )
 
                 for i in range(args.device_num):
+                    sync_delay = i * args.sync_delay
                     record_command: str = (
-                        f'k4arecorder.exe --device {i} --external-sync Subordinate --sync-delay 320 -d WFOV_2X2BINNED -c 1080p -r 30 -l {args.record_time} "{save_path}\\Goat_{len(os.listdir(save_path)) // 2 + 1}_{id[0]}_{i}.mkv"'
+                        f'k4arecorder.exe --device {i} --external-sync Subordinate --sync-delay {sync_delay} -d WFOV_2X2BINNED -c 1080p -r 30 -l {args.record_time} "{save_path}\\Goat_{len(os.listdir(save_path)) // 2 + 1}_{id[0]}_{i}.mkv"'
                     )
 
                     p = execute_recording(record_command, args.recorder_path)
