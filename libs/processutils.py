@@ -1,7 +1,7 @@
 import os
 import platform
 import subprocess
-import psutil
+
 import ctypes
 from loguru import logger
 

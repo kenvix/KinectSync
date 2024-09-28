@@ -1,87 +1,88 @@
 import socket
 import struct
+import subprocess
+from typing import List
+from loguru import logger
 import argparse
+import os
+import datetime
+from libs import processutils
 
 
-# 回调函数，您可以根据需要实现
-def on_start(session_name):
-    print(f"Received 'start' command with session name: {session_name}")
-
-
-def on_stop():
-    print("Received 'stop' command")
-
-
-# 发送状态消息给 master，自动使用 master 的来源地址，并添加 type 字段
-def send_status_to_master(master_addr, port, status_code, msg_type):
-    # 使用IPv6单播回复master状态
+# 发送状态消息给 master，自动使用 master 的来源地址，并添加消息长度和文本字段
+def send_status_to_master(master_addr, port, status_code, msg_type, msg_text=""):
     with socket.socket(socket.AF_INET6, socket.SOCK_DGRAM) as sock:
-        packed_status = struct.pack("!ii", status_code, msg_type)  # 状态码和消息类型
-        sock.sendto(packed_status, (master_addr, port))
+        strbytes = msg_text.encode("utf-8")
+        msg_length = len(strbytes)
+        packed_status = struct.pack(
+            "!iii", status_code, msg_type, msg_length
+        )  # 状态码, 类型, 消息长度
+        packed_message = packed_status + strbytes
+        sock.sendto(packed_message, (master_addr, port))
+    logger.info(
+        f"Sent status to {master_addr}, status_code: {status_code}, msg_type: {msg_type}, msg_text: {msg_text}"
+    )
 
 
-# 处理接收到的数据包
-def handle_message(data, master_addr, port, reply_port):
-    # 打印接收到的原始数据
-    print(f"Received raw data from {master_addr}: {data}, length: {len(data)}")
+# 启动录像进程
+def start_recording(
+    args: argparse.Namespace,
+    save_path: str,
+    process_list: List[subprocess.Popen],
+    master_addr,
+    reply_port,
+):
+    try:
+        current_round = len(os.listdir(save_path)) // 2 + 1
 
-    # 确保数据至少有 4 个字节 (状态码)
-    if len(data) < 4:
-        print(f"Invalid message received from {master_addr}, data too short.")
-        send_status_to_master(master_addr, reply_port, -1, -1)  # 错误代码，类型为 -1
-        return
-
-    # 解析状态码
-    status = struct.unpack("!i", data[:4])[0]
-
-    # 如果是“开始”消息，期望更多字节：状态码 (4字节) + 会话名字长度 (4字节) + 会话名字
-    if status == 1:  # Start command
-        # 确保有足够的字节来解包会话名字长度
-        if len(data) < 8:
-            print(
-                f"Invalid start message received from {master_addr}, data too short for session name length."
+        for i in range(args.device_num):
+            sync_delay = i * args.sync_delay
+            save_file_name = f"{save_path}/Goat_{current_round}_device_{i}.mkv"
+            record_command = (
+                f"k4arecorder.exe --device {i} --external-sync Subordinate "
+                f'--sync-delay {sync_delay} -d WFOV_2X2BINNED -c 1080p -r 30 -l {args.record_time} "{save_file_name}"'
             )
-            send_status_to_master(master_addr, reply_port, -1, 1)  # 错误代码，类型为1
-            return
 
-        # 解析会话名字长度
-        session_name_len = struct.unpack("!i", data[4:8])[0]
+            process = subprocess.Popen(
+                record_command,
+                shell=True,
+                cwd=args.recorder_path,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            logger.debug(f"Started recording on device {i}, command: {record_command}")
+            process_list.append(process)
 
-        # 确保会话名字长度合理，并且有足够的字节
-        if (
-            session_name_len < 0
-            or session_name_len > 128
-            or len(data) < 8 + session_name_len
-        ):
-            print(f"Invalid session name length: {session_name_len} or data too short.")
-            send_status_to_master(master_addr, reply_port, -1, 1)  # 错误代码，类型为1
-            return
+        # 监控所有进程
+        for p in process_list:
+            processutils.read_until_signal(p)
 
-        # 解析会话名字
-        session_name = struct.unpack(
-            f"!{session_name_len}s", data[8 : 8 + session_name_len]
-        )[0].decode("utf-8")
+        # 成功时回报给 master
+        send_status_to_master(master_addr, reply_port, 0, 1)
+    except Exception as e:
+        error_message = f"Recording failed: {e}"
+        logger.error(error_message)
+        send_status_to_master(master_addr, reply_port, -1, 1, error_message)
 
-        # 处理“开始”命令
-        on_start(session_name)
-        send_status_to_master(
-            master_addr, reply_port, 0, 1
-        )  # 0 表示 OK，类型为1（开始）
 
-    elif status == 2:  # Stop command
-        # 停止消息只包含状态码，因此不需要进一步解包
-        on_stop()
-        send_status_to_master(
-            master_addr, reply_port, 0, 2
-        )  # 0 表示 OK，类型为2（停止）
+# 停止所有录像进程
+def stop_recording(process_list: List[subprocess.Popen], master_addr, reply_port):
+    try:
+        for process in process_list:
+            if process.poll() is None:
+                process.terminate()
+                logger.info(f"Terminated process with PID {process.pid}")
 
-    else:
-        print(f"Unknown command received from {master_addr}: {status}")
-        send_status_to_master(master_addr, reply_port, -1, -1)  # 错误代码，类型未知
+        send_status_to_master(master_addr, reply_port, 0, 2)  # 成功停止录像
+    except Exception as e:
+        error_message = f"Failed to stop recording: {e}"
+        logger.error(error_message)
+        send_status_to_master(master_addr, reply_port, -1, 2, error_message)
 
 
 # 监听组播
-def listen_multicast(multicast_group, port, reply_port):
+def listen_multicast(multicast_group, port, reply_port, args, process_list):
     sock = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 
@@ -93,44 +94,73 @@ def listen_multicast(multicast_group, port, reply_port):
     mreq = group_bin + struct.pack("I", 0)  # 0代表所有接口
     sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_JOIN_GROUP, mreq)
 
-    print(f"Listening for multicast messages on {multicast_group}:{port}")
+    logger.info(f"Listening for multicast messages on {multicast_group}:{port}")
 
     while True:
-        data, address = sock.recvfrom(1024)  # 接收数据和地址（包含master地址）
-        master_addr = address[0]  # 从接收到的消息中获取master的IPv6地址
-        print(f"Received message from {master_addr}")
-        handle_message(data, master_addr, port, reply_port)
+        data, address = sock.recvfrom(1024)
+        master_addr = address[0]
+        logger.info(f"Received message from {master_addr}")
+
+        if len(data) >= 8:  # 期望收到 状态码 和 会话名字长度
+            status, session_name_len = struct.unpack("!ii", data[:8])
+
+            if status == 1:  # Start command
+                session_name = data[8 : 8 + session_name_len].decode("utf-8")
+                logger.info(f"Starting recording for session: {session_name}")
+                start_recording(
+                    args, args.save_path, process_list, master_addr, reply_port
+                )
+
+            elif status == 2:  # Stop command
+                logger.info("Stopping recording")
+                stop_recording(process_list, master_addr, reply_port)
+
+            elif status == 3:  # Stop command
+                logger.info("Master ping")
+                send_status_to_master(master_addr, reply_port, 0, 3)
 
 
 if __name__ == "__main__":
-    # 使用 argparse 来解析命令行参数
+    # 通过 argparse 处理命令行参数
     parser = argparse.ArgumentParser(
         description="Slave node for multicast communication."
     )
-
-    # 添加参数，并给出默认值
     parser.add_argument(
         "--multicast_group",
         type=str,
         default="ff02:ca11:4514:1919::",
-        help="Multicast group address (default: ff02:ca11:4514:1919::)",
+        help="Multicast group address",
+    )
+    parser.add_argument("--port", type=int, default=4329, help="Port to listen on")
+    parser.add_argument(
+        "--reply_port", type=int, default=4328, help="Port to send replies to"
     )
     parser.add_argument(
-        "--port", type=int, default=4329, help="Port to listen on (default: 4329)"
+        "--record_time", type=int, default=20, help="Recording time in seconds"
+    )
+    parser.add_argument("--device_num", type=int, default=2, help="Number of devices")
+    parser.add_argument(
+        "--sync_delay", type=int, default=160, help="Sync delay in microseconds"
     )
     parser.add_argument(
-        "--reply_port",
-        type=int,
-        default=4328,
-        help="Port to send replies to (default: 4328)",
+        "--recorder_path",
+        type=str,
+        default="C:\\Program Files\\Azure Kinect SDK v1.4.2\\tools",
+        help="Path to k4arecorder",
+    )
+    parser.add_argument(
+        "--save_path",
+        type=str,
+        default="./Goatdata",
+        help="Root path to save recordings",
     )
 
     args = parser.parse_args()
 
-    # 使用解析得到的参数
-    multicast_group = args.multicast_group  # 组播地址
-    port = args.port  # 监听的端口
-    reply_port = args.reply_port  # 回复端口
+    # List to track running processes
+    process_list: List[subprocess.Popen] = []
 
     # 启动监听
-    listen_multicast(multicast_group, port, reply_port)
+    listen_multicast(
+        args.multicast_group, args.port, args.reply_port, args, process_list
+    )
