@@ -38,6 +38,7 @@ def on_slave_reply(address, status, msg_type, msg_length, msg_text):
             f"RTT: Slave {address} pinged back in {time.perf_counter() - start_time:.9f} seconds."
         )
 
+
 # 发送“开始”消息给slaves
 def send_start_message(multicast_group, port, session_name, args):
     global sock
@@ -53,8 +54,9 @@ def send_start_message(multicast_group, port, session_name, args):
     # 数据包格式: 状态码 (int4), 会话名字长度 (int4), 会话名字 (str)
     status = 1
     packed_data = struct.pack(
-        f"!ii{session_name_len}s",
+        f"!iii{session_name_len}s",
         status,
+        args.record_time,
         session_name_len,
         session_name.encode("utf-8"),
     )
@@ -65,6 +67,7 @@ def send_start_message(multicast_group, port, session_name, args):
     # 使用已经创建的socket发送消息
     sock.sendto(packed_data, (multicast_group, port))
     on_start(session_name)
+
 
 # 发送“停止”消息给slaves
 def send_stop_message(multicast_group, port):

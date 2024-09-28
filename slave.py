@@ -34,7 +34,8 @@ def start_recording(
     process_list: List[subprocess.Popen],
     master_addr,
     reply_port,
-    session_name
+    session_name,
+    record_time,
 ):
     try:
         current_round = len(os.listdir(save_path)) // 2 + 1
@@ -44,7 +45,7 @@ def start_recording(
             save_file_name = f"{save_path}/{session_name}-{pc_name}-Device{i}.mkv"
             record_command = (
                 f"k4arecorder.exe --device {i} --external-sync Subordinate "
-                f'--sync-delay {sync_delay} -d WFOV_2X2BINNED -c 1080p -r 30 -l {args.record_time} "{save_file_name}"'
+                f'--sync-delay {sync_delay} -d WFOV_2X2BINNED -c 1080p -r 30 -l {record_time} "{save_file_name}"'
             )
 
             process = subprocess.Popen(
@@ -56,7 +57,7 @@ def start_recording(
                 text=True,
             )
             logger.debug(
-                f"Started recording [{session_name}] on device {i}, command: {record_command}"
+                f"Started {record_time}s recording [{session_name}] on device {i}, command: {record_command}"
             )
             process_list.append(process)
 
@@ -108,13 +109,21 @@ def listen_multicast(multicast_group, port, reply_port, args, process_list):
         logger.info(f"Received message from {master_addr}")
 
         if len(data) >= 8:  # 期望收到 状态码 和 会话名字长度
-            status, session_name_len = struct.unpack("!ii", data[:8])
+            status, record_time, session_name_len = struct.unpack("!iii", data[:12])
 
             if status == 1:  # Start command
-                session_name = data[8 : 8 + session_name_len].decode("utf-8")
-                logger.info(f"Starting recording for session: {session_name}")
+                session_name = data[12 : 12 + session_name_len].decode("utf-8")
+                logger.info(
+                    f"Starting {record_time}s recording [{session_name}] for session: {session_name}"
+                )
                 start_recording(
-                    args, args.save_path, process_list, master_addr, reply_port, session_name
+                    args,
+                    args.save_path,
+                    process_list,
+                    master_addr,
+                    reply_port,
+                    session_name,
+                    record_time,
                 )
 
             elif status == 2:  # Stop command
@@ -140,9 +149,6 @@ if __name__ == "__main__":
     parser.add_argument("--port", type=int, default=4329, help="Port to listen on")
     parser.add_argument(
         "--reply_port", type=int, default=4328, help="Port to send replies to"
-    )
-    parser.add_argument(
-        "--record_time", type=int, default=20, help="Recording time in seconds"
     )
     parser.add_argument("--device_num", type=int, default=2, help="Number of devices")
     parser.add_argument(
