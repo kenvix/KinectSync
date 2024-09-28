@@ -191,9 +191,19 @@ def main():
             sg.Button("Stop"),
             sg.Button("Ping"),
         ],
+        [
+            sg.Text("<!> Notice: Click 'Listen' before starting the session."),
+        ],
+        [
+            sg.Text(
+                "<!> Notice: Master node cannot do a recording. Run a slave node instead."
+            ),
+        ],
     ]
 
-    window = sg.Window("Master Control", layout)
+    window = sg.Window(
+        "KinectSync: Master Controller ver.1.2 by Kenvix <i@kenvix.com>", layout
+    )
 
     # 主循环
     while True:
@@ -206,6 +216,13 @@ def main():
         multicast_address = values["multicast_address"]
         port = int(values["port"])
         reply_port = int(values["reply_port"])
+        
+        if len(session_name) == 0:
+            sg.popup_error("Please enter a session name.")
+            continue
+        elif len(session_name) > 192:
+            sg.popup_error("Session name too long! (max 192 characters)")
+            continue
 
         # 解析设备和录制参数
         args = argparse.Namespace(

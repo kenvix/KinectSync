@@ -1,6 +1,6 @@
 from loguru import logger
 
-logger.info("PWM Controller ver.1.0 by Kenvix <i@kenvix.com>")
+logger.info("KinectSync: PWM Controller ver.1.0 by Kenvix <i@kenvix.com>")
 
 import FreeSimpleGUI as sg
 import serial

@@ -7,7 +7,10 @@ import argparse
 import os
 import datetime
 from libs import processutils
+import socket
 
+# 获取主机名称
+pc_name = socket.gethostname()
 
 # 发送状态消息给 master，自动使用 master 的来源地址，并添加消息长度和文本字段
 def send_status_to_master(master_addr, port, status_code, msg_type, msg_text=""):
@@ -31,13 +34,14 @@ def start_recording(
     process_list: List[subprocess.Popen],
     master_addr,
     reply_port,
+    session_name
 ):
     try:
         current_round = len(os.listdir(save_path)) // 2 + 1
 
         for i in range(args.device_num):
-            sync_delay = i * args.sync_delay
-            save_file_name = f"{save_path}/Goat_{current_round}_device_{i}.mkv"
+            sync_delay = (args.device_offset + i) * args.sync_delay
+            save_file_name = f"{save_path}/{session_name}-{pc_name}-Device{i}.mkv"
             record_command = (
                 f"k4arecorder.exe --device {i} --external-sync Subordinate "
                 f'--sync-delay {sync_delay} -d WFOV_2X2BINNED -c 1080p -r 30 -l {args.record_time} "{save_file_name}"'
@@ -51,7 +55,9 @@ def start_recording(
                 stderr=subprocess.PIPE,
                 text=True,
             )
-            logger.debug(f"Started recording on device {i}, command: {record_command}")
+            logger.debug(
+                f"Started recording [{session_name}] on device {i}, command: {record_command}"
+            )
             process_list.append(process)
 
         # 监控所有进程
@@ -108,7 +114,7 @@ def listen_multicast(multicast_group, port, reply_port, args, process_list):
                 session_name = data[8 : 8 + session_name_len].decode("utf-8")
                 logger.info(f"Starting recording for session: {session_name}")
                 start_recording(
-                    args, args.save_path, process_list, master_addr, reply_port
+                    args, args.save_path, process_list, master_addr, reply_port, session_name
                 )
 
             elif status == 2:  # Stop command
@@ -139,6 +145,9 @@ if __name__ == "__main__":
         "--record_time", type=int, default=20, help="Recording time in seconds"
     )
     parser.add_argument("--device_num", type=int, default=2, help="Number of devices")
+    parser.add_argument(
+        "-o", "--device_offset", type=int, default=0, help="device sync delay offset"
+    )
     parser.add_argument(
         "--sync_delay", type=int, default=160, help="Sync delay in microseconds"
     )
