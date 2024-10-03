@@ -3,6 +3,7 @@ import platform
 import subprocess
 
 import ctypes
+import sys
 from loguru import logger
 
 def check_admin():
@@ -18,6 +19,17 @@ def check_admin():
         return os.geteuid() == 0
     else:
         return False
+
+
+def make_dpi_aware():
+    if sys.platform == "win32":  # 仅在 Windows 上执行
+        try:
+            # Windows 8.1 及更高版本才有这个函数
+            ctypes.windll.shcore.SetProcessDpiAwareness(1)
+        except Exception:
+            # 如果上面的调用失败，尝试使用更老的API (Windows 7)
+            ctypes.windll.user32.SetProcessDPIAware()
+
 
 def set_high_priority(target_pid=None):
     """Set the process priority to the highest level based on the operating system."""

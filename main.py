@@ -9,6 +9,8 @@ import threading
 import time
 from libs import processutils
 
+processutils.make_dpi_aware()
+
 sg.theme("DarkAmber")
 
 layout = [

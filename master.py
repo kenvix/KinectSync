@@ -5,6 +5,9 @@ import FreeSimpleGUI as sg  # 假设替换为 FreeSimpleGUI
 import threading
 from loguru import logger
 import argparse
+from libs import processutils
+
+processutils.make_dpi_aware()
 
 # 全局变量
 is_listening = False  # 是否在监听
