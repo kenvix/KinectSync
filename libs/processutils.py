@@ -24,11 +24,15 @@ def check_admin():
 def make_dpi_aware():
     if sys.platform == "win32":  # 仅在 Windows 上执行
         try:
-            # Windows 8.1 及更高版本才有这个函数
-            ctypes.windll.shcore.SetProcessDpiAwareness(1)
+            # 设置每个监视器 DPI 感知（Windows 8.1 及以上）
+            ctypes.windll.shcore.SetProcessDpiAwareness(2)
         except Exception:
-            # 如果上面的调用失败，尝试使用更老的API (Windows 7)
-            ctypes.windll.user32.SetProcessDPIAware()
+            try:
+                # 如果 Windows 8.1 的 DPI 感知失败，使用 Windows 10 的函数
+                ctypes.windll.user32.SetProcessDpiAwarenessContext(-4)
+            except Exception:
+                # 如果两者都不可用，使用 Windows 7 的DPI设置
+                ctypes.windll.user32.SetProcessDPIAware()
 
 
 def set_high_priority(target_pid=None):
