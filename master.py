@@ -15,6 +15,7 @@ sock = None  # 监听的socket
 recording_processes = []  # 记录所有设备的进程
 listen_thread = None  # 用于保存监听线程
 start_time = time.perf_counter()
+ping_replies = {}  # 保存ping回复
 
 # 回调函数占位，您可以根据业务逻辑实现
 def on_start(session_name):
@@ -37,8 +38,9 @@ def on_slave_reply(address, status, msg_type, msg_length, msg_text):
         if "stopped" in msg_text.lower():
             logger.info(f"Slave {address} confirmed stopped.")
     if msg_type == 3:
+        ping_replies[address] = time.perf_counter() - start_time
         logger.info(
-            f"RTT: Slave {address} pinged back in {time.perf_counter() - start_time:.9f} seconds."
+            f"RTT: Slave {address} pinged back in {ping_replies[address]} seconds."
         )
 
 
@@ -91,7 +93,7 @@ def send_ping_message(multicast_group, port):
     global start_time
     start_time = time.perf_counter()
     status = 3
-    packed_data = struct.pack("!ii", status, 114514)
+    packed_data = struct.pack("!iii", status, 114514, 0)
 
     # 打印发送的数据包
     logger.debug(f"Sending packed data: {packed_data}, length: {len(packed_data)}")
@@ -176,11 +178,13 @@ def main():
             sg.Text("Multicast Address (default ff02:ca11:4514:1919::)"),
             sg.Input(default_text="ff02:ca11:4514:1919::", key="multicast_address"),
         ],
+        [sg.Checkbox("Legacy Sync Mode", key="legacy_sync")],
         [sg.Text("Port (default 4329)"), sg.Input(default_text="4329", key="port")],
         [
             sg.Text("Reply Port (default 4328)"),
             sg.Input(default_text="4328", key="reply_port"),
         ],
+        
         [sg.Text("Number of Clients"), sg.Input(default_text="2", key="client_num")],
         [
             sg.Text("Recording Time (seconds)"),
@@ -222,6 +226,7 @@ def main():
         multicast_address = values["multicast_address"]
         port = int(values["port"])
         reply_port = int(values["reply_port"])
+        is_legacy_sync = values["legacy_sync"]
         
         if len(session_name) == 0:
             sg.popup_error("Please enter a session name.")

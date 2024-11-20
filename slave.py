@@ -11,17 +11,17 @@ import socket
 
 # 获取主机名称
 pc_name = socket.gethostname()
+reply_socket = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
 
 # 发送状态消息给 master，自动使用 master 的来源地址，并添加消息长度和文本字段
 def send_status_to_master(master_addr, port, status_code, msg_type, msg_text=""):
-    with socket.socket(socket.AF_INET6, socket.SOCK_DGRAM) as sock:
-        strbytes = msg_text.encode("utf-8")
-        msg_length = len(strbytes)
-        packed_status = struct.pack(
+    strbytes = msg_text.encode("utf-8")
+    msg_length = len(strbytes)
+    packed_status = struct.pack(
             "!iii", status_code, msg_type, msg_length
-        )  # 状态码, 类型, 消息长度
-        packed_message = packed_status + strbytes
-        sock.sendto(packed_message, (master_addr, port))
+    )  # 状态码, 类型, 消息长度
+    packed_message = packed_status + strbytes
+    reply_socket.sendto(packed_message, (master_addr, port))
     logger.info(
         f"Sent status to {master_addr}, status_code: {status_code}, msg_type: {msg_type}, msg_text: {msg_text}"
     )
@@ -36,17 +36,29 @@ def start_recording(
     reply_port,
     session_name,
     record_time,
+    **kwargs,
 ):
+    if 'init_delay' in kwargs:
+        for _ in range(1): # Do not delete this line
+            processutils.busy_wait_ms(kwargs['init_delay'])
+    
     try:
         current_round = len(os.listdir(save_path)) // 2 + 1
 
         for i in range(args.device_num):
             sync_delay = (args.device_offset + i) * args.sync_delay
             save_file_name = f"{save_path}/{session_name}-{pc_name}-Device{i}.mkv"
-            record_command = (
-                f"k4arecorder.exe --device {i} --external-sync Subordinate "
-                f'--sync-delay {sync_delay} -d WFOV_2X2BINNED -c 1080p -r 30 -l {record_time} "{save_file_name}"'
-            )
+            
+            if 'legacy_master_device' in kwargs and kwargs['legacy_master_device'] == i:
+                record_command = (
+                    f"k4arecorder.exe --device {i} --external-sync Master "
+                    f'-d WFOV_2X2BINNED -c 1080p -r 30 -l {record_time} "{save_file_name}"'
+                )
+            else:
+                record_command = (
+                    f"k4arecorder.exe --device {i} --external-sync Subordinate "
+                    f'--sync-delay {sync_delay} -d WFOV_2X2BINNED -c 1080p -r 30 -l {record_time} "{save_file_name}"'
+                )
 
             process = subprocess.Popen(
                 record_command,
@@ -124,6 +136,8 @@ def listen_multicast(multicast_group, port, reply_port, args, process_list):
                     reply_port,
                     session_name,
                     record_time,
+                    legacy_master_device=args.master_device,
+                    init_delay=args.init_delay,
                 )
 
             elif status == 2:  # Stop command
@@ -155,7 +169,13 @@ if __name__ == "__main__":
         "-o", "--device_offset", type=int, default=0, help="device sync delay offset"
     )
     parser.add_argument(
+        "-x", "--init_delay", type=int, default=0, help="wait N milliseconds before starting"
+    )
+    parser.add_argument(
         "--sync_delay", type=int, default=160, help="Sync delay in microseconds"
+    )
+    parser.add_argument(
+        "--master_device", type=int, default=None, help="Master device id for legacy sync mode"
     )
     parser.add_argument(
         "--recorder_path",

@@ -5,6 +5,16 @@ import subprocess
 import ctypes
 import sys
 from loguru import logger
+import time
+
+def busy_wait_ms(milliseconds):
+    # 将等待时间转换为秒
+    target_duration = milliseconds / 1000.0
+    # 获取当前时间的高精度计时器值
+    start_time = time.perf_counter()
+    while (time.perf_counter() - start_time) < target_duration:
+        pass  # 忙等待，什么都不做
+
 
 def check_admin():
     """Check if the script is running with admin/root privileges."""
